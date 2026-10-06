@@ -1,11 +1,17 @@
 <!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>DragonTower</title></head>
 <body style="margin:0;background:#1b1020;color:#f6e2b0;font-family:Georgia,serif;display:flex;align-items:center;justify-content:center;height:100vh">
-Loading DragonTower…
+Loading…
 <script>
+const FIXED_INPUT="const K={l:0,r:0,j:0};let jPressed=false;\nconst held={l:null,r:null,j:null};\nconst map={ArrowLeft:'l',KeyA:'l',ArrowRight:'r',KeyD:'r',Space:'j',ArrowUp:'j',KeyW:'j'};\nconst btnEls={l:document.getElementById('L'),r:document.getElementById('R'),j:document.getElementById('J')};\nfunction setKey(k,on){\nK[k]=on?1:0;\nconst el=btnEls[k];\nif(el)el.classList.toggle('on',!!on);\n}\nfunction clearKeys(){\nfor(const k of['l','r','j']){held[k]=null;setKey(k,false)}\njPressed=false;\n}\nfunction releasePointer(pid){\nif(pid==null)return;\nfor(const k of['l','r','j']){\nif(held[k]===pid){held[k]=null;setKey(k,false)}\n}\n}\naddEventListener('keydown',e=>{\nif(e.code==='Escape'||e.code==='KeyP'){e.preventDefault();togglePause();return}\nif(Run.paused)return;\nconst k=map[e.code];\nif(k){setKey(k,true);if(k==='j'&&!e.repeat)jPressed=true;e.preventDefault()}\n});\naddEventListener('keyup',e=>{const k=map[e.code];if(k){setKey(k,false);e.preventDefault()}});\naddEventListener('blur',clearKeys);\ndocument.addEventListener('visibilitychange',()=>{if(document.hidden){clearKeys();if(Run.state==='play'&&!Run.paused)togglePause(true)}});\naddEventListener('pointerup',e=>releasePointer(e.pointerId),true);\naddEventListener('pointercancel',e=>releasePointer(e.pointerId),true);\naddEventListener('touchend',e=>{for(const t of e.changedTouches)releasePointer(t.identifier)},true);\naddEventListener('touchcancel',e=>{for(const t of e.changedTouches)releasePointer(t.identifier)},true);\nfor(const[id,k]of[['L','l'],['R','r'],['J','j']]){\nconst el=document.getElementById(id);\nel.addEventListener('pointerdown',e=>{\nif(Run.paused||Run.state==='title')return;\ne.preventDefault();\ntry{el.setPointerCapture(e.pointerId)}catch(_){}\nheld[k]=e.pointerId;\nsetKey(k,true);\nif(k==='j')jPressed=true;\n});\nel.addEventListener('pointerup',e=>{releasePointer(e.pointerId);e.preventDefault()});\nel.addEventListener('pointercancel',e=>{releasePointer(e.pointerId)});\nel.addEventListener('lostpointercapture',e=>{releasePointer(e.pointerId)});\n}\n['gesturestart','gesturechange','gestureend','dblclick'].forEach(ev=>addEventListener(ev,e=>e.preventDefault(),{passive:false}));\ndocument.addEventListener('touchmove',e=>{if(e.touches.length>1)e.preventDefault()},{passive:false});\n";
 fetch("https://cdn.jsdelivr.net/gh/TheBabelDragon/DragonTower@7bee3f5c23eefddbf69b18410c7a71f38bf264a7/site/index.html")
 .then(r=>{if(!r.ok)throw new Error(r.status);return r.text()})
-.then(html=>{document.open();document.write(html);document.close()})
-.catch(e=>{document.body.textContent="Load failed: "+e+" — try hard refresh"});
+.then(html=>{
+  const a=html.indexOf("const K={l:0,r:0,j:0}");
+  const b=html.indexOf("const titleEl=document.getElementById('title')");
+  if(a>=0&&b>a) html=html.slice(0,a)+FIXED_INPUT+html.slice(b);
+  document.open();document.write(html);document.close();
+})
+.catch(e=>{document.body.textContent="Load failed: "+e});
 </script>
 </body></html>
