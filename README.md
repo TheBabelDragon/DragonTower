@@ -1,5 +1,7 @@
 # DragonTower
 
+**Play now → https://thebabeldragon.github.io/DragonTower/**
+
 One more attempt. One more floor. Don't fall.
 
 A tiny dragon climbs an endless seeded tower. Miss a platform and the
