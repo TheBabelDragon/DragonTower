@@ -1,2 +1,13 @@
 <!DOCTYPE html>
-<!-- see repo; content uploaded via patch -->
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>DragonTower</title></head><body>
+<script>
+(async()=>{
+const b64="H4sIAFRcxGoC/619XXPbyK7gu36FkrkTkRJJk5Qo64vKOraTeMaJXbYzmWwqZw4lURITSVQoypaOrKrzuM+3bu1Wbe2+3p+w+74/ZX7JAugm2aQoOXPr1pwjk/0BoAE0gO5GM51nZ1end5+uz4vjcDrpFjr4pzhxZiP7uTt73u2MXWfQ7Uzd0Cn2x06wcEP7+TIcqo3n0JiKZ87UtZ/fe+7D3A/C58W+PwvdGTR78Abh2B64917fVelFKXozL/ScibroOxPXNpTi1Fl50+U0KVgu3IDenB4UzHylGIFWh15o9/17N0DcoRdO3O5Z4Iz82Z3/4AadI1ZU6CzCNfxtBb4fbnr+Sl14//Bmo1bPDwYAG0q2OEql5w/Wm7HrjcZhy9D1n9tTJxh5s5be7jn9b6PAX84GrZ+MnqGbehvRDif+Q2vsDQburB36y/5Ydfqh589aM3/mthnh7sTth6xAfXB737xQ3VvBYMBQJ/4yW0=";
+const bin=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
+const ds=new DecompressionStream("gzip");
+const stream=new Blob([bin]).stream().pipeThrough(ds);
+const html=await new Response(stream).text();
+document.open();document.write(html);document.close();
+})().catch(e=>{document.body.textContent="Load error: "+e});
+</script></body></html>
