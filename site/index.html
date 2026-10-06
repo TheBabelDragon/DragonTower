@@ -1,14 +1,14 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>DragonTower</title>
 <style>
 :root{box-sizing:border-box}
-html,body{height:100%;margin:0;background:#1b1020;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;font-family:Georgia,"Palatino Linotype",serif}
-canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
-#pad{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:space-between;padding:12px 14px calc(14px + env(safe-area-inset-bottom,0px));gap:10px}
+html,body{height:100%;margin:0;background:#1b1020;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;font-family:Georgia,"Palatino Linotype",serif}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#pad{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:space-between;padding:12px 14px calc(14px + env(safe-area-inset-bottom,0px));gap:10px;touch-action:none}
 #pad div{display:flex;gap:10px}
-.b{width:74px;height:74px;border-radius:18px 18px 8px 8px;border:3px solid #c9a35b;background:rgba(43,26,18,.55);color:#f6e2b0;font-size:28px;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
+.b{width:74px;height:74px;border-radius:18px 18px 8px 8px;border:3px solid #c9a35b;background:rgba(43,26,18,.55);color:#f6e2b0;font-size:28px;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px);touch-action:none;-webkit-user-select:none;user-select:none}
 .b.j{width:110px;font-size:20px;background:rgba(120,50,30,.6)}
 .b.on{background:rgba(201,163,91,.7);color:#2b1a12}
 @media(hover:hover) and (pointer:fine){#pad{opacity:.35}}
@@ -65,6 +65,12 @@ addEventListener('keyup',e=>{const k=map[e.code];if(k){K[k]=0;e.preventDefault()
 for(const [id,k] of [['L','l'],['R','r'],['J','j']]){const el=document.getElementById(id);
  el.addEventListener('pointerdown',e=>{K[k]=1;el.classList.add('on');if(k==='j')jPressed=true;e.preventDefault()});
  for(const ev of['pointerup','pointercancel','pointerleave'])el.addEventListener(ev,()=>{K[k]=0;el.classList.remove('on')})}
+
+// Block double-tap zoom / pinch / context menu that break the full-frame lock
+['gesturestart','gesturechange','gestureend','dblclick'].forEach(ev=>{
+  addEventListener(ev,e=>e.preventDefault(),{passive:false});
+});
+document.addEventListener('touchmove',e=>{if(e.touches.length>1)e.preventDefault()},{passive:false});
 
 // ---- Run flow ----
 function startRun(){Tower.reset();Tower.ensure(-2000);Object.assign(D,{x:180,y:0,vx:0,vy:0,ground:Tower.plats[0],sx:1,sy:1});
