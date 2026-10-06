@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DragonTower</title>
+<style>
+:root{box-sizing:border-box}
+html,body{height:100%;margin:0;background:#1b1020;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;font-family:Georgia,"Palatino Linotype",serif}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+#pad{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:space-between;padding:12px 14px calc(14px + env(safe-area-inset-bottom,0px));gap:10px}
+#pad div{display:flex;gap:10px}
+.b{width:74px;height:74px;border-radius:18px 18px 8px 8px;border:3px solid #c9a35b;background:rgba(43,26,18,.55);color:#f6e2b0;font-size:28px;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
+.b.j{width:110px;font-size:20px;background:rgba(120,50,30,.6)}
+.b.on{background:rgba(201,163,91,.7);color:#2b1a12}
+@media(hover:hover) and (pointer:fine){#pad{opacity:.35}}
+</style></head><body>
+<canvas id="c"></canvas>
+<div id="pad"><div><span class="b" id="L">◀</span><span class="b" id="R">▶</span></div><span class="b j" id="J">JUMP</span></div>
+<script>
+// ---- Central config: every tuning number lives here ----
+const CFG={W:360,G:1500,JUMP_V:-640,RUN:230,ACCEL:1800,AIR_ACCEL:1100,CUT:0.45,
+ COYOTE:.1,BUFFER:.12,EDGE:7,PX_PER_M:10,FALL_DIST:520,FALL_TIME:1.9,SEED:20260101,
+ STEP_MIN:52,STEP_MAX:92,SAFETY:.72,MIN_W:58,START_W:150,SAVE:'dragontower.v1'};
+// Reach from the real movement model: horizontal distance covered while rising/falling to height dy.
+function maxReach(dy){const v=-CFG.JUMP_V,d=v*v-2*CFG.G*dy;if(d<0)return 0;return CFG.RUN*((v+Math.sqrt(d))/CFG.G)}
+function rng(s){return()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+
+// ---- Save (versioned, tolerant of missing fields) ----
+const Save={d:{version:1,best:0,attempts:0,falls:0,jumps:0},
+ load(){try{const o=JSON.parse(localStorage.getItem(CFG.SAVE)||'{}');for(const k in this.d)if(typeof o[k]==='number')this.d[k]=o[k]}catch(e){}},
+ store(){try{localStorage.setItem(CFG.SAVE,JSON.stringify(this.d))}catch(e){}}};
+Save.load();
+
+// ---- Tower: deterministic, every hop validated against the movement model ----
+const Tower={plats:[],r:null,reset(){this.r=rng(CFG.SEED);this.plats=[{x:0,w:CFG.W,y:0,floor:1}]},
+ ensure(topY){let p=this.plats[this.plats.length-1];while(p.y>topY){const r=this.r,h=-p.y/CFG.PX_PER_M,diff=Math.min(1,h/260);
+  const dy=CFG.STEP_MIN+(CFG.STEP_MAX-CFG.STEP_MIN)*r()*(.5+diff*.5);
+  const w=Math.max(CFG.MIN_W,CFG.START_W-diff*85-r()*30);
+  const reach=maxReach(dy)*CFG.SAFETY;// edge-to-edge gap must stay under this
+  const gap=reach*(.25+.6*diff*r()+.15*r());
+  const dir=r()<.5?-1:1;let x=dir>0?p.x+p.w+gap:p.x-gap-w;
+  if(x<0||x+w>CFG.W){x=dir>0?p.x-gap-w:p.x+p.w+gap}
+  x=Math.max(0,Math.min(CFG.W-w,x));
+  const g2=x>=p.x+p.w?x-(p.x+p.w):p.x-(x+w);
+  if(g2>reach)x=x<p.x?p.x-reach-w:p.x+p.w+reach; // reject: pull back inside validated reach
+  x=Math.max(0,Math.min(CFG.W-w,x));
+  p={x,w,y:p.y-dy};this.plats.push(p)}}};
+
+// ---- Dragon ----
+const D={x:180,y:0,vx:0,vy:0,face:1,ground:null,coy:0,buf:0,sx:1,sy:1,land:0,anim:0,celebrate:0};
+const Run={state:'play',best:0,landedY:0,fallT:0,startH:0,lostH:0,record:false,flash:0,shake:0,t:0};
+const parts=[];const MAXP=140;
+function puff(x,y,n,c,sp){for(let i=0;i<n&&parts.length<MAXP;i++)parts.push({x,y,vx:(Math.random()-.5)*sp,vy:-Math.random()*sp*.5,l:.5,c})}
+const cv=document.getElementById('c'),cx=cv.getContext('2d');let H=640,S=1;
+function resize(){const dpr=Math.min(devicePixelRatio||1,2);cv.width=innerWidth*dpr;cv.height=innerHeight*dpr;S=cv.width/CFG.W;H=cv.height/S}
+addEventListener('resize',resize);resize();
+
+// ---- Audio (synthesised, no assets) ----
+let ac;function tone(f,d,type='square',v=.06,f2){try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();const o=ac.createOscillator(),g=ac.createGain();o.type=type;o.frequency.setValueAtTime(f,ac.currentTime);if(f2)o.frequency.exponentialRampToValueAtTime(f2,ac.currentTime+d);g.gain.setValueAtTime(v,ac.currentTime);g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+d);o.connect(g).connect(ac.destination);o.start();o.stop(ac.currentTime+d)}catch(e){}}
+
+// ---- Input ----
+const K={l:0,r:0,j:0};let jPressed=false;
+const map={ArrowLeft:'l',KeyA:'l',ArrowRight:'r',KeyD:'r',Space:'j',ArrowUp:'j',KeyW:'j'};
+addEventListener('keydown',e=>{const k=map[e.code];if(k){K[k]=1;if(k==='j'&&!e.repeat)jPressed=true;e.preventDefault()}});
+addEventListener('keyup',e=>{const k=map[e.code];if(k){K[k]=0;e.preventDefault()}});
+for(const [id,k] of [['L','l'],['R','r'],['J','j']]){const el=document.getElementById(id);
+ el.addEventListener('pointerdown',e=>{K[k]=1;el.classList.add('on');if(k==='j')jPressed=true;e.preventDefault()});
+ for(const ev of['pointerup','pointercancel','pointerleave'])el.addEventListener(ev,()=>{K[k]=0;el.classList.remove('on')})}
+
+// ---- Run flow ----
+function startRun(){Tower.reset();Tower.ensure(-2000);Object.assign(D,{x:180,y:0,vx:0,vy:0,ground:Tower.plats[0],sx:1,sy:1});
+ Run.state='play';Run.landedY=0;Run.record=false;Run.camY=-H*.62+0;Save.d.attempts++;Save.store();tone(520,.15,'triangle',.06,780)}
+Run.camY=-H*.62;startRun();
+const heightM=()=>Math.max(0,Math.floor(-D.y/CFG.PX_PER_M));
+function startFall(){Run.state='fall';Run.fallT=0;Run.lostH=Math.floor(-Run.landedY/CFG.PX_PER_M);Run.shake=.6;Save.d.falls++;Save.store();tone(700,1.4,'sawtooth',.07,60)}
+
+function step(dt){Run.t+=dt;
+ if(Run.state==='fall'){Run.fallT+=dt;D.vy=Math.min(D.vy+CFG.G*1.2*dt,1500);D.y+=D.vy*dt;D.anim+=dt*20;
+  if(Run.fallT>CFG.FALL_TIME||D.y>=0){Run.state='reset';Run.fallT=0;D.y=0;tone(220,.2,'triangle',.07,110)}return}
+ if(Run.state==='reset'){Run.fallT+=dt;if(Run.fallT>.9)startRun();return}
+ const dir=K.r-K.l;if(dir)D.face=dir;const onG=!!D.ground;
+ const ac=onG?CFG.ACCEL:CFG.AIR_ACCEL,tv=dir*CFG.RUN;
+ D.vx+=Math.max(-ac*dt,Math.min(ac*dt,tv-D.vx));if(!dir&&onG)D.vx*=.8;
+ D.x=Math.max(10,Math.min(CFG.W-10,D.x+D.vx*dt));
+ if(onG)D.coy=CFG.COYOTE;else D.coy-=dt;
+ D.buf=jPressed?CFG.BUFFER:D.buf-dt;jPressed=false;
+ if(D.buf>0&&D.coy>0){D.vy=CFG.JUMP_V;D.ground=null;D.coy=0;D.buf=0;D.sx=.7;D.sy=1.35;Save.d.jumps++;puff(D.x,D.y,5,'#d9c9a3',90);tone(330,.14,'square',.05,620)}
+ if(!K.j&&D.vy<0)D.vy+=CFG.G*CFG.CUT*3*dt; // release early = shorter hop
+ const py=D.y;D.vy+=CFG.G*dt;D.y+=D.vy*dt;
+ if(D.ground){const g=D.ground;if(D.x<g.x-CFG.EDGE||D.x>g.x+g.w+CFG.EDGE){D.ground=null}else D.y=g.y}
+ if(!D.ground&&D.vy>=0)for(const p of Tower.plats){if(py<=p.y+1&&D.y>=p.y&&D.x>=p.x-CFG.EDGE&&D.x<=p.x+p.w+CFG.EDGE){
+  const hard=D.vy>900;D.y=p.y;D.ground=p;D.sx=hard?1.5:1.3;D.sy=hard?.55:.7;D.vy=0;D.land=1;
+  puff(D.x,D.y,hard?12:6,'#e3d4ae',hard?200:120);Run.shake=hard?.25:.1;tone(hard?110:170,.12,'triangle',.08);
+  if(p.y<Run.landedY){Run.landedY=p.y;if(heightM()>Run.best&&heightM()>Save.d.best&&Save.d.best>0&&!Run.record){Run.record=true;Run.flash=1.2;D.celebrate=1;tone(660,.3,'triangle',.08,1320)}
+   if(heightM()>Save.d.best){Save.d.best=heightM();Save.store()}}
+  break}}
+ D.sx+=(1-D.sx)*Math.min(1,dt*14);D.sy+=(1-D.sy)*Math.min(1,dt*14);D.anim+=dt*(D.ground?Math.abs(D.vx)/18:8);
+ Run.best=Math.max(Run.best,heightM());Run.flash=Math.max(0,Run.flash-dt);D.celebrate=Math.max(0,D.celebrate-dt);
+ if(-Run.landedY>0&&D.y>Run.landedY+CFG.FALL_DIST)startFall();
+ Tower.ensure(D.y-H*1.2)}
+
+// ---- Rendering ----
+const lerp=(a,b,t)=>a+(b-a)*t;
+function sky(h){const t=Math.min(1,h/260),u=Math.min(1,Math.max(0,(h-260)/300));
+ const a=[lerp(255,24,t),lerp(176,24,t),lerp(110,70,t)],b=[lerp(120,6,t),lerp(70,4,t),lerp(120,30,t)];
+ return[`rgb(${a.map(Math.round)})`,`rgb(${b.map(Math.round)})`,t,u]}
+function drawDragon(x,y,fall){cx.save();cx.translate(x,y);cx.scale(D.face*D.sx,D.sy);
+ const f=fall?Math.sin(D.anim)*.5:0,run=D.ground?Math.abs(Math.sin(D.anim))*3:0;
+ if(fall)cx.rotate(Math.sin(D.anim*.4)*.9);
+ cx.translate(0,-13-run*.3);
+ cx.fillStyle='#5fbf6a';cx.beginPath();cx.moveTo(-10,2);cx.quadraticCurveTo(-26,4+f*8,-24,-8);cx.quadraticCurveTo(-18,0,-8,-4);cx.fill(); // tail
+ cx.fillStyle='#3a9a58';cx.beginPath();cx.ellipse(-3,-10,9,12+(fall?-3:Math.sin(D.anim*.8)*(D.ground?0:3)),-.5-f,0,7);cx.fill(); // wing
+ cx.fillStyle='#6fd37a';cx.beginPath();cx.ellipse(0,0,13,12,0,0,7);cx.fill(); // body
+ cx.fillStyle='#f6e2a0';cx.beginPath();cx.ellipse(3,3,8,8,0,0,7);cx.fill(); // belly
+ cx.fillStyle='#6fd37a';cx.beginPath();cx.ellipse(8,-10,11,9,0,0,7);cx.fill(); // head
+ cx.fillStyle='#f3c34a';cx.beginPath();cx.moveTo(4,-17);cx.lineTo(7,-26);cx.lineTo(10,-17);cx.fill(); // horn
+ cx.fillStyle='#fff';cx.beginPath();cx.ellipse(11,-12,fall?4.5:3.4,fall?5.5:4,0,0,7);cx.fill();
+ cx.fillStyle='#1b1020';cx.beginPath();cx.arc(12,-12,fall?1.2:1.9,0,7);cx.fill();
+ if(fall){cx.beginPath();cx.ellipse(15,-5,3,4,0,0,7);cx.fill()}
+ cx.fillStyle='#5fbf6a';cx.fillRect(-6,10,5,4+run*.4);cx.fillRect(4,10,5,4-run*.4+run*.8);
+ cx.restore()}
+function draw(){const h=heightM(),[c1,c2,t,u]=sky(h);
+ const g=cx.createLinearGradient(0,0,0,H*S);g.addColorStop(0,c2);g.addColorStop(1,c1);cx.fillStyle=g;cx.fillRect(0,0,cv.width,cv.height);
+ cx.setTransform(S,0,0,S,0,0);
+ const tgt=D.y-H*(Run.state==='fall'?.5:.62);
+ if(Run.state==='reset')Run.camY=lerp(Run.camY,-H*.62,.18);
+ else Run.camY=lerp(Run.camY,Math.min(tgt,Run.camY<tgt?Run.camY:tgt),Run.state==='fall'?.25:.1)||tgt;
+ if(Run.state==='play')Run.camY=lerp(Run.camY,tgt,.1);
+ let sh=Run.shake>0?(Math.random()-.5)*Run.shake*14:0;Run.shake=Math.max(0,Run.shake-.016);
+ const cy=Run.camY;cx.save();cx.translate(sh,-cy+sh);
+ // background: stars rise in, distant tower columns, clouds for altitude
+ const R=rng(7);for(let i=0;i<40;i++){const sx=R()*CFG.W,sy=R()*4000,par=.3;const yy=((sy-cy*par)%(H+40)+(H+40))%(H+40)+cy-20;
+  if(t>.3){cx.globalAlpha=t*.8;cx.fillStyle='#fff';cx.fillRect(sx,yy,1.5,1.5)}else if(i<12){cx.globalAlpha=.15;cx.fillStyle='#fff';cx.beginPath();cx.ellipse(sx,yy,40,10,0,0,7);cx.fill()}}
+ cx.globalAlpha=1;cx.fillStyle=`rgba(30,15,25,${.25+t*.2})`;cx.fillRect(-4,cy,18,H);cx.fillRect(CFG.W-14,cy,18,H);
+ for(let y=Math.floor(cy/60)*60;y<cy+H+60;y+=60){cx.fillStyle='rgba(0,0,0,.2)';cx.fillRect(-4,y,18,2);cx.fillRect(CFG.W-14,y,18,2)}
+ for(const p of Tower.plats){if(p.y<cy-30||p.y>cy+H+30)continue;
+  cx.fillStyle=p.floor?'#5a3e33':'#8a6a55';cx.fillRect(p.x,p.y,p.w,p.floor?400:14);
+  cx.fillStyle='#b99572';cx.fillRect(p.x,p.y,p.w,4);cx.fillStyle='rgba(0,0,0,.22)';
+  for(let bx=p.x+14;bx<p.x+p.w-4;bx+=22)cx.fillRect(bx,p.y+5,1.5,9);
+  if(!p.floor&&p.y%7<3.5){cx.fillStyle='#6ca85a';cx.fillRect(p.x+3,p.y-2,8,3)}}
+ // personal best line
+ const by=-Save.d.best*CFG.PX_PER_M;if(Save.d.best>0){cx.strokeStyle='#f3c34a';cx.setLineDash([8,6]);cx.lineWidth=1.5;cx.beginPath();cx.moveTo(0,by);cx.lineTo(CFG.W,by);cx.stroke();cx.setLineDash([]);cx.fillStyle='#f3c34a';cx.font='11px Georgia';cx.fillText('BEST '+Save.d.best+'m',8,by-4)}
+ for(let i=parts.length-1;i>=0;i--){const q=parts[i];q.x+=q.vx*.016;q.y+=q.vy*.016;q.vy+=40*.016;q.l-=.016;if(q.l<=0){parts.splice(i,1);continue}
+  cx.globalAlpha=q.l*1.6;cx.fillStyle=q.c;cx.beginPath();cx.arc(q.x,q.y,2.5,0,7);cx.fill()}
+ cx.globalAlpha=1;
+ if(Run.state==='fall'){cx.strokeStyle='rgba(255,255,255,.35)';cx.lineWidth=1.5;for(let i=0;i<14;i++){const lx=(i*53+Run.t*0)%CFG.W,ly=cy+((i*97+Run.fallT*900)%H);cx.beginPath();cx.moveTo(lx,ly);cx.lineTo(lx,ly-40);cx.stroke()}}
+ if(Run.state!=='reset')drawDragon(D.x,D.y,Run.state==='fall'); else if(Run.fallT>.5)drawDragon(D.x,D.y,false);
+ cx.restore();
+ // HUD
+ cx.textAlign='center';cx.fillStyle='#f6e2b0';cx.font='bold 34px Georgia';cx.shadowColor='rgba(0,0,0,.6)';cx.shadowBlur=6;
+ cx.fillText('HEIGHT: '+h+'m',CFG.W/2,44+Math.max(0,sh));cx.font='14px Georgia';cx.fillStyle='#e7c46a';
+ cx.fillText('PERSONAL BEST: '+Math.max(Save.d.best,h)+'m',CFG.W/2,66);
+ cx.font='11px Georgia';cx.fillStyle='rgba(246,226,176,.7)';cx.fillText('Attempt '+Save.d.attempts+' · Falls '+Save.d.falls,CFG.W/2,84);
+ if(Run.flash>0){cx.globalAlpha=Math.min(1,Run.flash);cx.fillStyle='#f3c34a';cx.font='bold 26px Georgia';cx.fillText('NEW RECORD',CFG.W/2,H*.3);cx.globalAlpha=1}
+ if(Run.state==='fall'&&Run.fallT>.5){cx.globalAlpha=Math.min(1,(Run.fallT-.5)*2);cx.fillStyle='#ff7a6a';cx.font='bold 30px Georgia';cx.fillText('NOOOOO',CFG.W/2,H*.4);cx.font='bold 22px Georgia';cx.fillText('−'+Run.lostH+'m',CFG.W/2,H*.4+30);cx.globalAlpha=1}
+ if(Run.state==='play'&&Save.d.attempts<=1&&Save.d.jumps<3){cx.font='14px Georgia';cx.fillStyle='#f6e2b0';cx.fillText('Arrows / A D to move · Space to jump · hold for higher',CFG.W/2,H*.78)}
+ cx.shadowBlur=0;cx.textAlign='left'}
+
+// ---- Fixed-step loop for deterministic physics ----
+let last=performance.now(),acc=0;const DT=1/120;
+function loop(now){acc+=Math.min(.05,(now-last)/1000);last=now;while(acc>=DT){step(DT);acc-=DT}draw();requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+</script></body></html>
